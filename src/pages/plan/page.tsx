@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   DndContext, closestCenter, PointerSensor,
@@ -21,6 +21,12 @@ import {
 } from '@/utils/planStorage';
 import BottomNav from '@/components/feature/BottomNav';
 import { signOut } from '@/utils/auth';
+
+
+interface Toast {
+  id: number;
+  message: string;
+}
 
 const DAY_COLORS = [
   'bg-violet-500', 'bg-indigo-500', 'bg-sky-500', 'bg-teal-500',
@@ -957,10 +963,14 @@ const TaskSubtaskPanel = ({ taskInfo, plan, isActivePlan = false, onPlanUpdate }
 // ─── Empty State (no tasks at all) ───────────────────────────────────────────
 const EmptyState = ({
                       onNavigate,
-                      onRestore
+                      onRestore,
+                      onClearCloud,
+                      onLogout,
                     }: {
   onNavigate: () => void;
   onRestore: () => void;
+  onClearCloud: () => void;
+  onLogout: () => void;
 }) => (
   <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-indigo-50 flex flex-col items-center justify-center pb-24 px-8">
     <div className="text-center max-w-xs">
@@ -981,6 +991,19 @@ const EmptyState = ({
           className="mt-3 w-full py-4 rounded-2xl border border-indigo-300 text-indigo-600 font-bold"
       >
         Restore from Cloud
+      </button>
+      <button
+          onClick={onClearCloud}
+          className="mt-3 w-full py-4 rounded-2xl border border-rose-200 text-rose-500 font-bold text-base hover:bg-rose-50 transition-all cursor-pointer whitespace-nowrap"
+      >
+        Clear Cloud Data
+      </button>
+
+      <button
+          onClick={onLogout}
+          className="mt-3 w-full py-4 rounded-2xl border border-gray-200 text-gray-500 font-bold text-base hover:bg-gray-50 transition-all cursor-pointer whitespace-nowrap"
+      >
+        Logout
       </button>
     </div>
     <BottomNav />
@@ -1008,6 +1031,17 @@ const PlanPage = () => {
   const [syncStatus, setSyncStatus] = useState<
       'idle' | 'saving' | 'success' | 'error'
   >('idle');
+
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastCounter = useRef(0);
+
+  const addToast = useCallback((message: string) => {
+    const id = ++toastCounter.current;
+    setToasts((prev) => [...prev, { id, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 2600);
+  }, []);
 
   useEffect(() => {
     const loadPlan = async () => {
@@ -1037,16 +1071,23 @@ const PlanPage = () => {
         return;
       }
 
-      const restored = await restoreActivePlanFromCloud();
+      const justLoggedIn = sessionStorage.getItem('just_logged_in') === 'true';
 
-      if (restored && restored.tasks.length > 0) {
-        setPlan(restored);
-        setActivePlan(restored);
-        setSelectedTaskId(restored.selectedTaskId || restored.tasks?.[0]?.id || '');
-        setPageMode('calendar');
-        return;
+      if (justLoggedIn) {
+        sessionStorage.removeItem('just_logged_in');
+
+        const restored = await restoreActivePlanFromCloud();
+
+        if (restored && restored.tasks?.length > 0) {
+          setPlan(restored);
+          setActivePlan(restored);
+          setSelectedTaskId(restored.selectedTaskId || restored.tasks?.[0]?.id || '');
+          setPageMode('calendar');
+          return;
+        }
       }
 
+      // Nothing at all
       setPlan(null);
       setPageMode('pending');
     };
@@ -1085,6 +1126,7 @@ const PlanPage = () => {
       await syncActivePlanToCloud();
 
       setSyncStatus('success');
+      addToast('Your cloud data has been cleared');
 
       // Disappear after 2 seconds
       setTimeout(() => setSyncStatus('idle'), 2000);
@@ -1110,10 +1152,34 @@ const PlanPage = () => {
   // No tasks at all — show empty state with guide
   if (!plan) {
     return (
-        <EmptyState
-            onNavigate={() => navigate('/create')}
-            onRestore={handleRestoreFromCloud}
-        />
+        <>
+          {/* Toast */}
+          <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none">
+            {toasts.map((t) => (
+                <div
+                    key={t.id}
+                    className="bg-gray-900 text-white text-sm font-semibold px-5 py-2.5 rounded-full"
+                    style={{ animation: 'slideDown 0.3s ease-out' }}
+                >
+                  {t.message}
+                </div>
+            ))}
+          </div>
+
+          <EmptyState
+              onNavigate={() => navigate('/create')}
+              onRestore={handleRestoreFromCloud}
+              onClearCloud={handleSyncToCloud}
+              onLogout={handleLogout}
+          />
+
+          <style>{`
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+        </>
     );
   }
 
@@ -1121,6 +1187,18 @@ const PlanPage = () => {
   if (pageMode === 'calendar' && plan) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-indigo-50 pb-24">
+        {/* Toast */}
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none">
+          {toasts.map((t) => (
+              <div
+                  key={t.id}
+                  className="bg-gray-900 text-white text-sm font-semibold px-5 py-2.5 rounded-full"
+                  style={{ animation: 'slideDown 0.3s ease-out' }}
+              >
+                {t.message}
+              </div>
+          ))}
+        </div>
         <div className="bg-white/80 backdrop-blur-sm sticky top-0 z-10 border-b border-gray-100">
           <div className="max-w-md mx-auto px-5 py-4">
             <div className="flex items-center justify-between">
@@ -1181,6 +1259,12 @@ const PlanPage = () => {
           <CalendarView plan={plan} />
         </div>
         <BottomNav />
+        <style>{`
+            @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-12px); }
+            to   { opacity: 1; transform: translateY(0); }
+            }
+        `}</style>
       </div>
     );
   }

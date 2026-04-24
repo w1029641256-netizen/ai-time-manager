@@ -25,6 +25,7 @@ const AuthPage = () => {
         }
 
         alert(mode === 'login' ? 'Login successful' : 'Account created');
+        sessionStorage.setItem('just_logged_in', 'true');
         navigate('/plan');
     };
 

@@ -93,11 +93,26 @@ export const acceptPendingPlan = (pendingPlan: Plan): Plan => {
 
 
 // Sync to Cloud
-export const syncActivePlanToCloud = async () => {
+export const syncActivePlanToCloud = async (): Promise<void> => {
   const plan = getActivePlan();
   const user = await getCurrentUser();
 
-  if (!plan || !user) return;
+  if (!user) return;
+
+  const emptyPlan: Plan = {
+    task: '',
+    tasks: [],
+    deadline: '',
+    priority: 'Low',
+    hoursPerDay: 0,
+    activeDays: [],
+    subtasks: [],
+    completedTasks: [],
+    progress: 0,
+    selectedTaskId: '',
+  };
+
+  const planToSave = plan ?? emptyPlan;
 
   const { data: existing } = await supabase
       .from('plans')
@@ -109,7 +124,7 @@ export const syncActivePlanToCloud = async () => {
   const payload = {
     user_id: user.id,
     plan_type: 'active',
-    data: plan,
+    data: planToSave,
     updated_at: new Date().toISOString(),
   };
 
